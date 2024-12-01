@@ -2,20 +2,15 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 	"net/http"
-
-	// "errors"
 	"time"
 
-	// "github.com/sirupsen/logrus"
 	userModel "github.com/CAUSALITY-3/Thanal-GO/models/user"
+	"github.com/CAUSALITY-3/Thanal-GO/utils"
 	"github.com/gin-gonic/gin"
-
-	// "github.com/CAUSALITY-3/Thanal-GO/utils"
 	"go.mongodb.org/mongo-driver/bson"
-	// "go.mongodb.org/mongo-driver/mongo/options"
-
-	// "go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -34,21 +29,49 @@ func (s *UserService) FindUserByEmail(c *gin.Context) {
 	if email == "" {
 		email = "abinbabu003@gmail.com"
 	}
+	log.Println("tttttttttttttttttt", email)
 	var body map[string]interface{}
+	log.Println("qqqqqqqqqqqqqqqqqqqqqqq")
 	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		log.Println("wwwwwwwwwwwwwwwww")
+		body = nil
+	}
+	log.Println("eeeeeeeeeeeee")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var user []userModel.User
+	filter := bson.M{"email": email}
+
+	err := s.UserCollection.FindOne(ctx, filter).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	}
+
+	userJSON, err := json.Marshal(user)
+	if err != nil {
+		// handle error
+	}
+	c.SetCookie("user", string(userJSON), 3600000, "/", "", false, false)
+	c.JSON(http.StatusOK, gin.H{"user": user, "body": body})
+}
+
+func (s *UserService) CreateUser(c *gin.Context) {
+
+	var user userModel.User
+	if err := utils.GetReqBody(c, &user); err != nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var user userModel.User
-	filter := bson.M{"email": email}
-	err := s.UserCollection.FindOne(ctx, filter).Decode(&user)
+	user.CreatedAt = time.Now()
+
+	result, err := s.UserCollection.InsertOne(ctx, user)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err})
 	}
-	c.JSON(http.StatusOK, gin.H{"user": user, "body": body})
+	c.JSON(http.StatusOK, gin.H{"result": result, "user": user})
 }
 
 // func (s *UserService) UpsertUser(ctx context.Context, data bson.M) (*UserData, error) {

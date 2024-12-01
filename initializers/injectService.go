@@ -2,6 +2,7 @@ package initializers
 
 import (
 	database "github.com/CAUSALITY-3/Thanal-GO/models/DB"
+	userModel "github.com/CAUSALITY-3/Thanal-GO/models/user"
 	services "github.com/CAUSALITY-3/Thanal-GO/service/user"
 	"github.com/CAUSALITY-3/Thanal-GO/utils"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,7 +16,8 @@ func InjectServices() error {
 }
 
 func getCollection(client *mongo.Client, collection string) *mongo.Collection {
-	return client.Database("thanal").Collection(collection)
+	userModel.SetupSchemaAndIndexes(client)
+	return client.Database("test").Collection(collection)
 }
 
 // func injectServices() error {
