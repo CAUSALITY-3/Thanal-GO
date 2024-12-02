@@ -12,26 +12,26 @@ import (
 )
 
 type Address struct {
-	HouseName string `bson:"houseName" json:"houseName" validate:"required"`
-	Landmark  string `bson:"landmark" json:"landmark" validate:"required"`
-	City      string `bson:"city" json:"city" validate:"required"`
+	HouseName string `bson:"houseName" json:"houseName"`
+	Landmark  string `bson:"landmark" json:"landmark"`
+	City      string `bson:"city" json:"city"`
 	State     string `bson:"state" json:"state"`
-	Pincode   int    `bson:"pincode" json:"pincode" validate:"required"`
+	Pincode   int    `bson:"pincode" json:"pincode"`
 }
 
 type DeliveryAddress struct {
 	Name      string `bson:"name" json:"name"`
-	HouseName string `bson:"houseName" json:"houseName" validate:"required"`
-	Landmark  string `bson:"landmark" json:"landmark" validate:"required"`
-	City      string `bson:"city" json:"city" validate:"required"`
+	HouseName string `bson:"houseName" json:"houseName"`
+	Landmark  string `bson:"landmark" json:"landmark"`
+	City      string `bson:"city" json:"city"`
 	State     string `bson:"state" json:"state"`
-	Pincode   int    `bson:"pincode" json:"pincode" validate:"required"`
+	Pincode   int    `bson:"pincode" json:"pincode"`
 	Phone     string `bson:"phone" json:"phone"`
 }
 
 type User struct {
 	ID              primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	Name            string             `bson:"name" json:"name,omitempty" `
+	Name            string             `bson:"name" json:"name" validate:"required"`
 	Email           string             `bson:"email" json:"email" validate:"required,email" index:"unique"`
 	Phone           string             `bson:"phone" json:"phone"`
 	ProfilePic      string             `bson:"profilePic" json:"profilePic"`

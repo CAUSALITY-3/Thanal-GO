@@ -4,14 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"net/http"
 	"time"
 
 	userModel "github.com/CAUSALITY-3/Thanal-GO/models/user"
 	"github.com/CAUSALITY-3/Thanal-GO/utils"
-	"github.com/gin-gonic/gin"
+	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type UserService struct {
@@ -24,183 +24,172 @@ func NewUserService(userCollection *mongo.Collection) *UserService {
 	}
 }
 
-func (s *UserService) FindUserByEmail(c *gin.Context) {
+func (s *UserService) FindUserByEmail(c *fiber.Ctx) error {
 	email := c.Query("email")
+
 	if email == "" {
-		email = "abinbabu003@gmail.com"
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Email is required"})
 	}
-	log.Println("tttttttttttttttttt", email)
-	var body map[string]interface{}
-	log.Println("qqqqqqqqqqqqqqqqqqqqqqq")
-	if err := c.ShouldBindJSON(&body); err != nil {
-		log.Println("wwwwwwwwwwwwwwwww")
-		body = nil
-	}
-	log.Println("eeeeeeeeeeeee")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var user []userModel.User
+	var user userModel.User
 	filter := bson.M{"email": email}
 
 	err := s.UserCollection.FindOne(ctx, filter).Decode(&user)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		log.Fatal(err)
 	}
 
 	userJSON, err := json.Marshal(user)
 	if err != nil {
 		// handle error
 	}
-	c.SetCookie("user", string(userJSON), 3600000, "/", "", false, false)
-	c.JSON(http.StatusOK, gin.H{"user": user, "body": body})
+	c.Cookie(&fiber.Cookie{
+		Name:     "user",
+		Value:    string(userJSON),
+		MaxAge:   3600000,
+		Path:     "/",
+		HTTPOnly: false,
+		Secure:   false,
+	})
+	return c.JSON(fiber.Map{"user": user})
 }
 
-func (s *UserService) CreateUser(c *gin.Context) {
+func (s *UserService) GetAllUsers(c *fiber.Ctx) error {
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var results []userModel.User
+
+	cursor, err := s.UserCollection.Find(ctx, bson.M{})
+	if err != nil {
+		log.Fatal(err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err})
+	}
+	defer cursor.Close(ctx)
+	// Iterate through the cursor and decode each document into results slice
+	for cursor.Next(ctx) {
+		var user userModel.User
+		if err := cursor.Decode(&user); err != nil {
+			log.Fatal(err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err})
+		}
+		results = append(results, user)
+	}
+
+	return c.JSON(results)
+}
+
+func (s *UserService) CacheAllUsers() bool {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cursor, err := s.UserCollection.Find(ctx, bson.M{})
+	if err != nil {
+		log.Fatal(err)
+		return false
+	}
+	defer cursor.Close(ctx)
+
+	usersCache := make(map[string]*userModel.User)
+	// Iterate through the cursor and decode each document into results slice
+	for cursor.Next(ctx) {
+		var user userModel.User
+		if err := cursor.Decode(&user); err != nil {
+			log.Fatal(err)
+			return false
+		}
+		usersCache[user.Email] = &user
+	}
+	utils.SingletonInjector.Bind(usersCache, "usersCache")
+	return true
+}
+
+func (s *UserService) CreateUser(c *fiber.Ctx) error {
 	var user userModel.User
-	if err := utils.GetReqBody(c, &user); err != nil {
-		return
+
+	// Get the request body
+	if err := c.BodyParser(&user); err != nil {
+		return err
+	}
+
+	// Validate the request body
+	if err := utils.ValidateStruct(&user); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	user.CreatedAt = time.Now()
 
-	result, err := s.UserCollection.InsertOne(ctx, user)
+	result, err := s.UserCollection.InsertOne(ctx, &user)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
-	c.JSON(http.StatusOK, gin.H{"result": result, "user": user})
+	insertedUser := s.UserCollection.FindOne(ctx, bson.M{"_id": result.InsertedID})
+	if err := insertedUser.Decode(&user); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	utils.UpdateUsersCache(user)
+	return c.JSON(user)
 }
 
-// func (s *UserService) UpsertUser(ctx context.Context, data bson.M) (*UserData, error) {
-// 	email, ok := data["email"].(string)
-// 	if !ok || email == "" {
-// 		return nil, errors.New("user email not provided")
-// 	}
+func (s *UserService) UpsertUser(c *fiber.Ctx) error {
 
-// 	update := bson.M{
-// 		"$set": bson.M{
-// 			"lastLoggedIn": time.Now(),
-// 			"updatedAt":    time.Now(),
-// 			"name":         data["name"],
-// 			"email":        email,
-// 			"profilePic":   data["picture"],
-// 		},
-// 	}
+	type UpdateRequest struct {
+		Filter map[string]string      `json:"filter"` // Criteria to match the document
+		Update map[string]interface{} `json:"update"` // Update content
+	}
 
-// 	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
-// 	var user UserData
-// 	err := s.UserCollection.FindOneAndUpdate(ctx, bson.M{"email": email}, update, opts).Decode(&user)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	var reqBody UpdateRequest
+	// Get the request body
+	if err := c.BodyParser(&reqBody); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-// 	return &user, nil
-// }
+	reqBody.Update["updatedAt"] = time.Now()
+	filter := bson.M{}
+	for k, v := range reqBody.Filter {
+		filter[k] = v
+	}
+	update := bson.M{"$set": reqBody.Update}
+	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
 
-// func (s *UserService) UpdateUserByQuery(ctx context.Context, query, data bson.M) (*UserData, error) {
-// 	update := bson.M{
-// 		"$set": bson.M{
-// 			"updatedAt": time.Now(),
-// 		},
-// 	}
-// 	for key, value := range data {
-// 		update["$set"].(bson.M)[key] = value
-// 	}
+	var result userModel.User
+	err := s.UserCollection.FindOneAndUpdate(ctx, &filter, &update, opts).Decode(&result)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 
-// 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
-// 	var user UserData
-// 	err := s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&user)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	}
 
-// 	return &user, nil
-// }
+	utils.UpdateUsersCache(result)
+	return c.JSON(fiber.Map{"result": result})
+}
 
-// func (s *UserService) UpdateUserOrder(ctx context.Context, query bson.M, orderId string, orderItems map[string]bool) (*UserData, error) {
+func (s *UserService) UpdateUserOrder(c *fiber.Ctx) error {
+	type UpdateRequest struct {
+		Filter map[string]string      `json:"filter"` // Criteria to match the document
+		Update map[string]interface{} `json:"update"` // Update content
+	}
 
-// 	UsersCache, ok := utils.SingletonInjector.Get("UsersCache").(map[string]*UserData)
-// 	if !ok {
-// 		return nil, errors.New("UsersCache not found")
-// 	}
+	var reqBody UpdateRequest
+	// Get the request body
+	if err := c.BodyParser(&reqBody); err != nil {
+		return err
+	}
+	email := reqBody.Filter["email"]
+	userData := utils.GetUserCache(email)
+	log.Println(userData)
+	return nil
+}
 
-// 	userdata, exists := UsersCache[query["email"].(string)]
-// 	if !exists {
-// 		var result *mongo.SingleResult
-// 		err := s.UserCollection.FindOne(ctx, query).Decode(&result)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		var userdata UserData
-// 		err = result.Decode(&userdata)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 	}
-// 	bag := []string{}
-// 	for _, item := range userdata.Bag {
-// 		if !orderItems[item] {
-// 			bag = append(bag, item)
-// 		}
-// 	}
-
-// 	if contains(userdata.Orders, orderId) {
-// 		return userdata, nil
-// 	}
-
-// 	update := bson.M{
-// 		"$push": bson.M{"orders": orderId},
-// 		"$set":  bson.M{"bag": bag, "updatedAt": time.Now()},
-// 	}
-
-// 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
-// 	var user UserData
-// 	err := s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&user)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	userdata[user.Email] = &user
-// 	return &user, nil
-// }
-
-// func (s *UserService) AddToBag(ctx context.Context, query bson.M, productId string) (*UserData, error) {
-// 	userdata, exists := s.UsersCache[query["email"].(string)]
-// 	if !exists {
-// 		return nil, errors.New("user not found in cache")
-// 	}
-
-// 	if contains(userdata.Bag, productId) {
-// 		return userdata, nil
-// 	}
-
-// 	update := bson.M{
-// 		"$push": bson.M{"bag": productId},
-// 		"$set":  bson.M{"updatedAt": time.Now()},
-// 	}
-
-// 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
-// 	var user UserData
-// 	err := s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&user)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	s.UsersCache[user.Email] = &user
-// 	return &user, nil
-// }
-
-// // Helper function to check if a slice contains a value
-// func contains(slice []string, value string) bool {
-// 	for _, item := range slice {
-// 		if item == value {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
-// Additional functions for removeFromBag, favoriteItem, unFavoriteItem, etc., would follow a similar pattern.
+func (s *UserService) GetUsersCache(c *fiber.Ctx) error {
+	usersCache := utils.SingletonInjector.Get("usersCache").(map[string]*userModel.User)
+	return c.JSON(fiber.Map{"usersCache": usersCache})
+}

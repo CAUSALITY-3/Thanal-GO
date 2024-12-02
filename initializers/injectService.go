@@ -12,6 +12,7 @@ func InjectServices() error {
 	dbClient := database.GetDBClient()
 	userService := services.NewUserService(getCollection(dbClient, "users"))
 	utils.SingletonInjector.Bind(userService, "userService")
+	userService.CacheAllUsers()
 	return nil
 }
 

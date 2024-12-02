@@ -1,91 +1,63 @@
 package router
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/CAUSALITY-3/Thanal-GO/router/routes"
-	"github.com/gin-gonic/gin"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gorilla/sessions"
-	"github.com/rs/cors"
 )
 
 var store = sessions.NewCookieStore([]byte("thanal"))
 
-func SetupRouter() *gin.Engine {
-	router := gin.Default()
-	// router.Use(gin.Logger())
-	router.Use(gin.Recovery())
-	router.Use(func(c *gin.Context) {
+func SetupRouter() *fiber.App {
+	app := fiber.New()
+	app.Use(cors.New())
+	app.Use(logger.New())
+	app.Use(func(c *fiber.Ctx) error {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Println("Recovered from panic:", r)
+			}
+		}()
 		store.Options = &sessions.Options{
 			MaxAge:   60 * 24 * 60 * 60, // 60 days in seconds
 			HttpOnly: true,
 		}
-		c.Set("session", store)
-		c.Next()
+		c.Locals("session", store)
+		return c.Next()
 	})
-	corsMiddleware := cors.Default()
-	router.Use(func(c *gin.Context) {
-		corsMiddleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			c.Next()
-		})).ServeHTTP(c.Writer, c.Request)
-	})
+
 	// Static files
-	router.Static("/_next/static", "/static")
+	app.Static("/_next/static", "./static")
 
 	// Routes
-	router.GET("/thanal", func(c *gin.Context) {
-		c.String(http.StatusOK, "Thanal is running!!!")
-	})
-
-	router.GET("/writeCache", func(c *gin.Context) {
-		// Implement writeCacheToFile logic
-		status := "Cache written to file"
-		c.String(http.StatusOK, status)
-	})
-
-	router.GET("/getRedirectCache", func(c *gin.Context) {
-		// Implement cache retrieval logic
-		keys := []string{"key1", "key2", "key3"} // Replace with actual cache keys
-		c.JSON(http.StatusOK, keys)
-	})
-
-	router.GET("/generateAndLoadCache", func(c *gin.Context) {
-		// Implement generateAndLoadCache logic
-		status := "Cache generated and loaded"
-		c.String(http.StatusOK, status)
-	})
-
-	router.GET("/loadCache", func(c *gin.Context) {
-		// Implement loadCache logic
-		c.String(http.StatusOK, "Loaded")
-	})
-
-	router.GET("/getUsersCache", func(c *gin.Context) {
-		// Implement usersCache logic
-		data := map[string]string{"user1": "data1", "user2": "data2"} // Replace with actual user cache data
-		c.JSON(http.StatusOK, data)
+	app.Get("/thanal", func(c *fiber.Ctx) error {
+		return c.SendString("Thanal is running!!!")
 	})
 
 	// Redirect logic
-	router.Use(func(c *gin.Context) {
-		if !ginPathStartsWith(c.Request.URL.Path, "/thanalApi") {
+	app.Use(func(c *fiber.Ctx) error {
+		if !fiberPathStartsWith(c.Path(), "/thanalApi") {
 			// Implement redirect logic
-			c.Redirect(http.StatusMovedPermanently, "/redirect-path")
-			return
+			return c.Redirect("/redirect-path", http.StatusMovedPermanently)
 		}
-		c.Next()
+		return c.Next()
 	})
 
-	routes.RegisterRoutes(router)
+	routes.RegisterRoutes(app)
 
 	// Error handling middleware
-	router.NoRoute(func(c *gin.Context) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Route not found"})
+	app.Use(func(c *fiber.Ctx) error {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Route not found"})
 	})
 
-	return router
+	return app
 }
 
-func ginPathStartsWith(path, prefix string) bool {
+func fiberPathStartsWith(path, prefix string) bool {
 	return len(path) >= len(prefix) && path[:len(prefix)] == prefix
 }
