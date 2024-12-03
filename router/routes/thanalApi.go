@@ -25,4 +25,7 @@ func RegisterRoutes(app *fiber.App) {
 	thanalApi.Put("", func(c *fiber.Ctx) error {
 		return userService.UpsertUser(c) // Ensure your service method is compatible with Fiber's context
 	})
+	thanalApi.Put("/UpdateUserOrder", func(c *fiber.Ctx) error {
+		return userService.UpdateUserOrder(c) // Ensure your service method is compatible with Fiber's context
+	})
 }

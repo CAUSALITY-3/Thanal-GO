@@ -173,9 +173,13 @@ func (s *UserService) UpsertUser(c *fiber.Ctx) error {
 }
 
 func (s *UserService) UpdateUserOrder(c *fiber.Ctx) error {
+	type UpdateType struct {
+		OrderItems map[string]any `json:"orderItems"` //TODO update the type in future
+		OrderId    string         `json:"orderId"`
+	}
 	type UpdateRequest struct {
-		Filter map[string]string      `json:"filter"` // Criteria to match the document
-		Update map[string]interface{} `json:"update"` // Update content
+		Filter map[string]string `json:"filter"` // Criteria to match the document
+		Update UpdateType        `json:"update"` // Update content
 	}
 
 	var reqBody UpdateRequest
@@ -185,7 +189,33 @@ func (s *UserService) UpdateUserOrder(c *fiber.Ctx) error {
 	}
 	email := reqBody.Filter["email"]
 	userData := utils.GetUserCache(email)
-	log.Println(userData)
+	bag := utils.Filter(userData.Bag, func(id string) bool {
+		return reqBody.Update.OrderItems[id] != nil
+	})
+	orderAlreadyExists := utils.Includes(userData.Orders, func(id string) bool {
+		return id == reqBody.Update.OrderId
+	})
+
+	if orderAlreadyExists {
+		return c.Status(fiber.StatusBadRequest).JSON(userData)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := bson.M{"email": reqBody.Filter["email"]}
+	update := bson.M{"$push": bson.M{"orders": reqBody.Update.OrderId}, "$set": bson.M{"bag": bag, "updatedAt": time.Now()}}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+
+	log.Println("Error updating user:", query, update)
+	// Perform the findOneAndUpdate operation
+	var updatedUser userModel.User
+	err := s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	if err != nil {
+		log.Println("Error updating user:", err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	c.JSON(updatedUser)
 	return nil
 }
 
