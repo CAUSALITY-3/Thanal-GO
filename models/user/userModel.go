@@ -82,9 +82,9 @@ func SetupSchemaAndIndexes(client *mongo.Client) error {
 
 	// Apply the schema validation
 	err := client.Database("test").RunCommand(ctx, bson.D{
-		{"collMod", "users"},
-		{"validator", validator},
-		{"validationLevel", "strict"},
+		bson.E{Key: "collMod", Value: "users"},
+		bson.E{Key: "validator", Value: validator},
+		bson.E{Key: "validationLevel", Value: "strict"},
 	}).Err()
 	if err != nil {
 		log.Printf("Error applying schema validation: %v", err)

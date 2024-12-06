@@ -127,9 +127,9 @@ func setupProductSchemaAndIndexes(client *mongo.Client) error {
 
 	// Apply the schema validation
 	err := client.Database("test").RunCommand(ctx, bson.D{
-		{"collMod", "products"},
-		{"validator", validator},
-		{"validationLevel", "strict"},
+		bson.E{Key: "collMod", Value: "products"},
+		bson.E{Key: "validator", Value: validator},
+		bson.E{Key: "validationLevel", Value: "strict"},
 	}).Err()
 	if err != nil {
 		log.Printf("Error applying schema validation: %v", err)
