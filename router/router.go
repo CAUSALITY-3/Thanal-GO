@@ -21,6 +21,7 @@ func SetupRouter() *fiber.App {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Println("Recovered from panic:", r)
+				c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Internal server error", "error": r})
 			}
 		}()
 		store.Options = &sessions.Options{

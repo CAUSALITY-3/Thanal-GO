@@ -224,16 +224,24 @@ func (s *UserService) AddToBag(c *fiber.Ctx) error {
 	type UpdateType struct {
 		ProductId string `json:"productId"`
 	}
+
+	type FilterType struct {
+		Email string `json:"email"`
+	}
 	type UpdateRequest struct {
-		Filter map[string]string `json:"filter"` // Criteria to match the document
-		Update UpdateType        `json:"update"` // Update content
+		Filter FilterType `json:"filter"` // Criteria to match the document
+		Update UpdateType `json:"update"` // Update content
 	}
-	var reqBody UpdateRequest
+	// var reqBody UpdateRequest
 	// Get the request body
-	if err := c.BodyParser(&reqBody); err != nil {
-		return err
+
+	reqBody, err := utils.ParseBody[UpdateRequest](c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
-	email := reqBody.Filter["email"]
+	log.Println("Adding to bag:", reqBody.Update.ProductId)
+	email := reqBody.Filter.Email
+
 	userCache := utils.GetUserCache(email)
 
 	if utils.Includes(userCache.Bag, func(id string) bool {
@@ -252,7 +260,7 @@ func (s *UserService) AddToBag(c *fiber.Ctx) error {
 	log.Println("Error updating user:", query, update)
 	// Perform the findOneAndUpdate operation
 	var updatedUser userModel.User
-	err := s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	err = s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
 	if err != nil {
 		log.Println("Error updating user:", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
@@ -268,22 +276,26 @@ func (s *UserService) RemoveFromBag(c *fiber.Ctx) error {
 	type UpdateType struct {
 		ProductId string `json:"productId"`
 	}
+
+	type FilterType struct {
+		Email string `json:"email"`
+	}
 	type UpdateRequest struct {
-		Filter map[string]string `json:"filter"` // Criteria to match the document
-		Update UpdateType        `json:"update"` // Update content
+		Filter FilterType `json:"filter"` // Criteria to match the document
+		Update UpdateType `json:"update"` // Update content
 	}
 	reqBody, err := utils.ParseBody[UpdateRequest](c)
 	if err != nil {
 		log.Fatal(err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
-	email := reqBody.Filter["email"]
+	email := reqBody.Filter.Email
 	userCache := utils.GetUserCache(email)
 
-	if utils.Includes(userCache.Bag, func(id string) bool {
+	if !utils.Includes(userCache.Bag, func(id string) bool {
 		return id == reqBody.Update.ProductId
 	}) {
-		return c.Status(fiber.StatusConflict).JSON(userCache)
+		return c.Status(fiber.StatusAlreadyReported).JSON(userCache)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -312,16 +324,20 @@ func (s *UserService) FavoriteItem(c *fiber.Ctx) error {
 	type UpdateType struct {
 		ProductId string `json:"productId"`
 	}
+
+	type FilterType struct {
+		Email string `json:"email"`
+	}
 	type UpdateRequest struct {
-		Filter map[string]string `json:"filter"` // Criteria to match the document
-		Update UpdateType        `json:"update"` // Update content
+		Filter FilterType `json:"filter"` // Criteria to match the document
+		Update UpdateType `json:"update"` // Update content
 	}
 	reqBody, err := utils.ParseBody[UpdateRequest](c)
 	if err != nil {
 		log.Fatal(err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
-	email := reqBody.Filter["email"]
+	email := reqBody.Filter.Email
 	userCache := utils.GetUserCache(email)
 
 	if utils.Includes(userCache.Wishlists, func(id string) bool {
@@ -356,22 +372,26 @@ func (s *UserService) UnfavoriteItem(c *fiber.Ctx) error {
 	type UpdateType struct {
 		ProductId string `json:"productId"`
 	}
+
+	type FilterType struct {
+		Email string `json:"email"`
+	}
 	type UpdateRequest struct {
-		Filter map[string]string `json:"filter"` // Criteria to match the document
-		Update UpdateType        `json:"update"` // Update content
+		Filter FilterType `json:"filter"` // Criteria to match the document
+		Update UpdateType `json:"update"` // Update content
 	}
 	reqBody, err := utils.ParseBody[UpdateRequest](c)
 	if err != nil {
 		log.Fatal(err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
-	email := reqBody.Filter["email"]
+	email := reqBody.Filter.Email
 	userCache := utils.GetUserCache(email)
 
 	if !utils.Includes(userCache.Wishlists, func(id string) bool {
 		return id == reqBody.Update.ProductId
 	}) {
-		return c.Status(fiber.StatusAccepted).JSON(userCache)
+		return c.Status(fiber.StatusAlreadyReported).JSON(userCache)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
