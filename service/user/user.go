@@ -219,6 +219,182 @@ func (s *UserService) UpdateUserOrder(c *fiber.Ctx) error {
 	return nil
 }
 
+func (s *UserService) AddToBag(c *fiber.Ctx) error {
+
+	type UpdateType struct {
+		ProductId string `json:"productId"`
+	}
+	type UpdateRequest struct {
+		Filter map[string]string `json:"filter"` // Criteria to match the document
+		Update UpdateType        `json:"update"` // Update content
+	}
+	var reqBody UpdateRequest
+	// Get the request body
+	if err := c.BodyParser(&reqBody); err != nil {
+		return err
+	}
+	email := reqBody.Filter["email"]
+	userCache := utils.GetUserCache(email)
+
+	if utils.Includes(userCache.Bag, func(id string) bool {
+		return id == reqBody.Update.ProductId
+	}) {
+		return c.Status(fiber.StatusConflict).JSON(userCache)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := bson.M{"email": email}
+	update := bson.M{"$push": bson.M{"bag": reqBody.Update.ProductId}, "$set": bson.M{"updatedAt": time.Now()}}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+
+	log.Println("Error updating user:", query, update)
+	// Perform the findOneAndUpdate operation
+	var updatedUser userModel.User
+	err := s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	if err != nil {
+		log.Println("Error updating user:", err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	utils.UpdateUsersCache(updatedUser)
+	utils.CookieUpdate(c, updatedUser)
+	c.JSON(updatedUser)
+	return nil
+}
+
+func (s *UserService) RemoveFromBag(c *fiber.Ctx) error {
+
+	type UpdateType struct {
+		ProductId string `json:"productId"`
+	}
+	type UpdateRequest struct {
+		Filter map[string]string `json:"filter"` // Criteria to match the document
+		Update UpdateType        `json:"update"` // Update content
+	}
+	reqBody, err := utils.ParseBody[UpdateRequest](c)
+	if err != nil {
+		log.Fatal(err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	email := reqBody.Filter["email"]
+	userCache := utils.GetUserCache(email)
+
+	if utils.Includes(userCache.Bag, func(id string) bool {
+		return id == reqBody.Update.ProductId
+	}) {
+		return c.Status(fiber.StatusConflict).JSON(userCache)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := bson.M{"email": email}
+	update := bson.M{"$pull": bson.M{"bag": reqBody.Update.ProductId}, "$set": bson.M{"updatedAt": time.Now()}}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+
+	log.Println("Error updating user:", query, update)
+	// Perform the findOneAndUpdate operation
+	var updatedUser userModel.User
+	err = s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	if err != nil {
+		log.Println("Error updating user:", err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	utils.UpdateUsersCache(updatedUser)
+	utils.CookieUpdate(c, updatedUser)
+	c.JSON(updatedUser)
+	return nil
+}
+
+func (s *UserService) FavoriteItem(c *fiber.Ctx) error {
+
+	type UpdateType struct {
+		ProductId string `json:"productId"`
+	}
+	type UpdateRequest struct {
+		Filter map[string]string `json:"filter"` // Criteria to match the document
+		Update UpdateType        `json:"update"` // Update content
+	}
+	reqBody, err := utils.ParseBody[UpdateRequest](c)
+	if err != nil {
+		log.Fatal(err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	email := reqBody.Filter["email"]
+	userCache := utils.GetUserCache(email)
+
+	if utils.Includes(userCache.Wishlists, func(id string) bool {
+		return id == reqBody.Update.ProductId
+	}) {
+		return c.Status(fiber.StatusConflict).JSON(userCache)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := bson.M{"email": email}
+	update := bson.M{"$push": bson.M{"wishlists": reqBody.Update.ProductId}, "$set": bson.M{"updatedAt": time.Now()}}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+
+	log.Println("Error updating user:", query, update)
+	// Perform the findOneAndUpdate operation
+	var updatedUser userModel.User
+	err = s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	if err != nil {
+		log.Println("Error updating user:", err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	utils.UpdateUsersCache(updatedUser)
+	utils.CookieUpdate(c, updatedUser)
+	c.JSON(updatedUser)
+	return nil
+}
+
+func (s *UserService) UnfavoriteItem(c *fiber.Ctx) error {
+
+	type UpdateType struct {
+		ProductId string `json:"productId"`
+	}
+	type UpdateRequest struct {
+		Filter map[string]string `json:"filter"` // Criteria to match the document
+		Update UpdateType        `json:"update"` // Update content
+	}
+	reqBody, err := utils.ParseBody[UpdateRequest](c)
+	if err != nil {
+		log.Fatal(err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	email := reqBody.Filter["email"]
+	userCache := utils.GetUserCache(email)
+
+	if !utils.Includes(userCache.Wishlists, func(id string) bool {
+		return id == reqBody.Update.ProductId
+	}) {
+		return c.Status(fiber.StatusAccepted).JSON(userCache)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := bson.M{"email": email}
+	update := bson.M{"$pull": bson.M{"wishlists": reqBody.Update.ProductId}, "$set": bson.M{"updatedAt": time.Now()}}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+
+	log.Println("Error updating user:", query, update)
+	// Perform the findOneAndUpdate operation
+	var updatedUser userModel.User
+	err = s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	if err != nil {
+		log.Println("Error updating user:", err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+	}
+	utils.UpdateUsersCache(updatedUser)
+	utils.CookieUpdate(c, updatedUser)
+	c.JSON(updatedUser)
+	return nil
+}
+
 func (s *UserService) GetUsersCache(c *fiber.Ctx) error {
 	usersCache := utils.SingletonInjector.Get("usersCache").(map[string]*userModel.User)
 	return c.JSON(fiber.Map{"usersCache": usersCache})

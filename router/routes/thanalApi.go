@@ -11,21 +11,33 @@ func RegisterRoutes(app *fiber.App) {
 	thanalApi := app.Group("/thanalApi/users")
 
 	thanalApi.Get("", func(c *fiber.Ctx) error {
-		return userService.FindUserByEmail(c) // Ensure your service method is compatible with Fiber's context
+		return userService.FindUserByEmail(c)
 	})
 	thanalApi.Get("/getallusers", func(c *fiber.Ctx) error {
-		return userService.GetAllUsers(c) // Ensure your service method is compatible with Fiber's context
+		return userService.GetAllUsers(c)
 	})
 	thanalApi.Get("/GetUsersCache", func(c *fiber.Ctx) error {
-		return userService.GetUsersCache(c) // Ensure your service method is compatible with Fiber's context
+		return userService.GetUsersCache(c)
 	})
 	thanalApi.Post("", func(c *fiber.Ctx) error {
-		return userService.CreateUser(c) // Ensure your service method is compatible with Fiber's context
+		return userService.CreateUser(c)
 	})
 	thanalApi.Put("", func(c *fiber.Ctx) error {
-		return userService.UpsertUser(c) // Ensure your service method is compatible with Fiber's context
+		return userService.UpsertUser(c)
 	})
 	thanalApi.Put("/UpdateUserOrder", func(c *fiber.Ctx) error {
-		return userService.UpdateUserOrder(c) // Ensure your service method is compatible with Fiber's context
+		return userService.UpdateUserOrder(c)
+	})
+	thanalApi.Put("/addToBag", func(c *fiber.Ctx) error {
+		return userService.AddToBag(c)
+	})
+	thanalApi.Put("/removeFromBag", func(c *fiber.Ctx) error {
+		return userService.RemoveFromBag(c)
+	})
+	thanalApi.Put("/favoriteItem", func(c *fiber.Ctx) error {
+		return userService.FavoriteItem(c)
+	})
+	thanalApi.Put("/unFavoriteItem", func(c *fiber.Ctx) error {
+		return userService.UnfavoriteItem(c)
 	})
 }

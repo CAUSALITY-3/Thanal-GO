@@ -1,10 +1,12 @@
 package utils
 
 import (
+	"encoding/json"
 	"log"
 
 	userModel "github.com/CAUSALITY-3/Thanal-GO/models/user"
 	"github.com/go-playground/validator/v10"
+	"github.com/gofiber/fiber/v2"
 )
 
 var validate *validator.Validate
@@ -21,6 +23,31 @@ func UpdateUsersCache(user userModel.User) bool {
 	usersCache := SingletonInjector.Get("usersCache").(map[string]*userModel.User)
 	usersCache[user.Email] = &user
 	return SingletonInjector.Update(usersCache, "usersCache")
+}
+
+func ParseBody[T any](c *fiber.Ctx) (*T, error) {
+	var body T
+	if err := c.BodyParser(&body); err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func CookieUpdate(c *fiber.Ctx, user userModel.User) error {
+	userJSON, err := json.Marshal(user)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	c.Cookie(&fiber.Cookie{
+		Name:     "user",
+		Value:    string(userJSON),
+		MaxAge:   3600000,
+		Path:     "/",
+		HTTPOnly: false,
+		Secure:   false,
+	})
+	return nil
 }
 
 func GetUserCache(email string) *userModel.User {
