@@ -2,16 +2,15 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"time"
 
+	database "github.com/CAUSALITY-3/Thanal-GO/models/DB"
 	userModel "github.com/CAUSALITY-3/Thanal-GO/models/user"
 	"github.com/CAUSALITY-3/Thanal-GO/utils"
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type UserService struct {
@@ -31,53 +30,36 @@ func (s *UserService) FindUserByEmail(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Email is required"})
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	var user userModel.User
 	filter := bson.M{"email": email}
 
-	err := s.UserCollection.FindOne(ctx, filter).Decode(&user)
+	user, err := database.MongoFindOne(s.UserCollection, user, filter)
 	if err != nil {
-		log.Fatal(err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	userJSON, err := json.Marshal(user)
+	// userJSON, err := json.Marshal(user)
 	if err != nil {
-		// handle error
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
-	c.Cookie(&fiber.Cookie{
-		Name:     "user",
-		Value:    string(userJSON),
-		MaxAge:   3600000,
-		Path:     "/",
-		HTTPOnly: false,
-		Secure:   false,
-	})
+
+	// c.Cookie(&fiber.Cookie{
+	// 	Name:     "user",
+	// 	Value:    string(userJSON),
+	// 	MaxAge:   3600000,
+	// 	Path:     "/",
+	// 	HTTPOnly: false,
+	// 	Secure:   false,
+	// })
 	return c.JSON(fiber.Map{"user": user})
 }
 
 func (s *UserService) GetAllUsers(c *fiber.Ctx) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var results []userModel.User
-
-	cursor, err := s.UserCollection.Find(ctx, bson.M{})
+	results, err := database.MongoFindAll(s.UserCollection, userModel.User{})
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err})
-	}
-	defer cursor.Close(ctx)
-	// Iterate through the cursor and decode each document into results slice
-	for cursor.Next(ctx) {
-		var user userModel.User
-		if err := cursor.Decode(&user); err != nil {
-			log.Fatal(err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err})
-		}
-		results = append(results, user)
 	}
 
 	return c.JSON(results)
@@ -111,7 +93,6 @@ func (s *UserService) CacheAllUsers() bool {
 
 func (s *UserService) CreateUser(c *fiber.Ctx) error {
 	var user userModel.User
-
 	// Get the request body
 	if err := c.BodyParser(&user); err != nil {
 		return err
@@ -121,19 +102,13 @@ func (s *UserService) CreateUser(c *fiber.Ctx) error {
 	if err := utils.ValidateStruct(&user); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
-	user.CreatedAt = time.Now()
-
-	result, err := s.UserCollection.InsertOne(ctx, &user)
+	user, err := database.MongoCreate(s.UserCollection, user)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
+		log.Println(err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err})
 	}
-	insertedUser := s.UserCollection.FindOne(ctx, bson.M{"_id": result.InsertedID})
-	if err := insertedUser.Decode(&user); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
-	}
+
 	utils.UpdateUsersCache(user)
 	return c.JSON(user)
 }
@@ -150,8 +125,6 @@ func (s *UserService) UpsertUser(c *fiber.Ctx) error {
 	if err := c.BodyParser(&reqBody); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	reqBody.Update["updatedAt"] = time.Now()
 	filter := bson.M{}
@@ -159,13 +132,10 @@ func (s *UserService) UpsertUser(c *fiber.Ctx) error {
 		filter[k] = v
 	}
 	update := bson.M{"$set": reqBody.Update}
-	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
 
-	var result userModel.User
-	err := s.UserCollection.FindOneAndUpdate(ctx, &filter, &update, opts).Decode(&result)
+	result, err := database.MongoFindOneAndUpdate(s.UserCollection, userModel.User{}, filter, update)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
-
 	}
 
 	utils.UpdateUsersCache(result)
@@ -200,19 +170,10 @@ func (s *UserService) UpdateUserOrder(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(userData)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	query := bson.M{"email": reqBody.Filter["email"]}
+	filter := bson.M{"email": reqBody.Filter["email"]}
 	update := bson.M{"$push": bson.M{"orders": reqBody.Update.OrderId}, "$set": bson.M{"bag": bag, "updatedAt": time.Now()}}
-	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
-
-	log.Println("Error updating user:", query, update)
-	// Perform the findOneAndUpdate operation
-	var updatedUser userModel.User
-	err := s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	updatedUser, err := database.MongoFindOneAndUpdate(s.UserCollection, userModel.User{}, filter, update)
 	if err != nil {
-		log.Println("Error updating user:", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
 	c.JSON(updatedUser)
@@ -250,21 +211,14 @@ func (s *UserService) AddToBag(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusConflict).JSON(userCache)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	query := bson.M{"email": email}
+	filter := bson.M{"email": email}
 	update := bson.M{"$push": bson.M{"bag": reqBody.Update.ProductId}, "$set": bson.M{"updatedAt": time.Now()}}
-	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 
-	log.Println("Error updating user:", query, update)
-	// Perform the findOneAndUpdate operation
-	var updatedUser userModel.User
-	err = s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	updatedUser, err := database.MongoFindOneAndUpdate(s.UserCollection, userModel.User{}, filter, update)
 	if err != nil {
-		log.Println("Error updating user:", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
+
 	utils.UpdateUsersCache(updatedUser)
 	utils.CookieUpdate(c, updatedUser)
 	c.JSON(updatedUser)
@@ -298,19 +252,11 @@ func (s *UserService) RemoveFromBag(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusAlreadyReported).JSON(userCache)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	query := bson.M{"email": email}
+	filter := bson.M{"email": email}
 	update := bson.M{"$pull": bson.M{"bag": reqBody.Update.ProductId}, "$set": bson.M{"updatedAt": time.Now()}}
-	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 
-	log.Println("Error updating user:", query, update)
-	// Perform the findOneAndUpdate operation
-	var updatedUser userModel.User
-	err = s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	updatedUser, err := database.MongoFindOneAndUpdate(s.UserCollection, userModel.User{}, filter, update)
 	if err != nil {
-		log.Println("Error updating user:", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
 	utils.UpdateUsersCache(updatedUser)
@@ -346,21 +292,14 @@ func (s *UserService) FavoriteItem(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusConflict).JSON(userCache)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	query := bson.M{"email": email}
+	filter := bson.M{"email": email}
 	update := bson.M{"$push": bson.M{"wishlists": reqBody.Update.ProductId}, "$set": bson.M{"updatedAt": time.Now()}}
-	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 
-	log.Println("Error updating user:", query, update)
-	// Perform the findOneAndUpdate operation
-	var updatedUser userModel.User
-	err = s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	updatedUser, err := database.MongoFindOneAndUpdate(s.UserCollection, userModel.User{}, filter, update)
 	if err != nil {
-		log.Println("Error updating user:", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
+
 	utils.UpdateUsersCache(updatedUser)
 	utils.CookieUpdate(c, updatedUser)
 	c.JSON(updatedUser)
@@ -394,21 +333,14 @@ func (s *UserService) UnfavoriteItem(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusAlreadyReported).JSON(userCache)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	query := bson.M{"email": email}
+	filter := bson.M{"email": email}
 	update := bson.M{"$pull": bson.M{"wishlists": reqBody.Update.ProductId}, "$set": bson.M{"updatedAt": time.Now()}}
-	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 
-	log.Println("Error updating user:", query, update)
-	// Perform the findOneAndUpdate operation
-	var updatedUser userModel.User
-	err = s.UserCollection.FindOneAndUpdate(ctx, query, update, opts).Decode(&updatedUser)
+	updatedUser, err := database.MongoFindOneAndUpdate(s.UserCollection, userModel.User{}, filter, update)
 	if err != nil {
-		log.Println("Error updating user:", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err})
 	}
+
 	utils.UpdateUsersCache(updatedUser)
 	utils.CookieUpdate(c, updatedUser)
 	c.JSON(updatedUser)
